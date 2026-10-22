@@ -1,0 +1,6 @@
+# Your settings (income, criteria) and downloaded listings stay local.
+config.yaml
+data/
+.venv/
+__pycache__/
+*.pyc

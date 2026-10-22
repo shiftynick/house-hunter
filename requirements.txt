@@ -1,0 +1,4 @@
+homeharvest>=0.8
+pandas>=2.0
+shapely>=2.0
+PyYAML>=6.0

@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>House Hunter</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="data/config.js"></script>
+<script src="data/listings.js"></script>
+<script src="data/boundaries.js"></script>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6b6b70; --line: #e4e2dc;
+    --accent: #2f6f5e; --accent-soft: #e3efe9; --warn: #b4541a; --warn-soft: #fbeee4;
+    --sold: #6d5bb5; --pending: #c08a12; --active: #2f6f5e; --fav: #d9a400;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141416; --panel: #1d1d20; --ink: #ececef; --muted: #9a9aa2; --line: #2e2e33;
+      --accent: #5fb89c; --accent-soft: #1f342d; --warn: #f0965a; --warn-soft: #3a2619;
+      --sold: #a596e8; --pending: #e7b13c; --active: #5fb89c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 1000; }
+  header h1 { font-size: 17px; margin: 0; }
+  header .meta { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  .layout { display: grid; grid-template-columns: 290px 1fr; min-height: calc(100vh - 53px); }
+  aside { border-right: 1px solid var(--line); background: var(--panel); padding: 14px 16px 40px; overflow-y: auto; height: calc(100vh - 53px); position: sticky; top: 53px; }
+  aside h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 8px; }
+  aside h3:first-child { margin-top: 0; }
+  label.chk { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer; }
+  label.chk .n { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 4px 0; }
+  .row label { flex: 1; font-size: 12px; color: var(--muted); }
+  input[type=number], input[type=search], select { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+  .hint { color: var(--muted); font-size: 12px; margin: 2px 0 0 24px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  main { padding: 16px 20px 40px; min-width: 0; }
+  #map { height: 380px; border-radius: 10px; border: 1px solid var(--line); margin-bottom: 14px; }
+  .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar .count { font-weight: 600; }
+  .toolbar .stats { color: var(--muted); font-size: 13px; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar select { width: auto; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; cursor: pointer; transition: box-shadow .15s; }
+  .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+  .card.hl { outline: 2px solid var(--accent); }
+  .card .img { aspect-ratio: 4/3; background: var(--line) center/cover no-repeat; position: relative; }
+  .card .img .status { position: absolute; left: 8px; top: 8px; color: #fff; font-size: 11px; font-weight: 600; padding: 3px 7px; border-radius: 4px; text-transform: uppercase; letter-spacing: .04em; }
+  .card .img .acts { position: absolute; right: 6px; top: 6px; display: flex; gap: 4px; }
+  .card .img .acts button { background: rgba(0,0,0,.55); color: #fff; border: 0; padding: 4px 8px; font-size: 14px; }
+  .card .img .acts button.on { color: var(--fav); }
+  .card .img .nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,.5); color: #fff; border: 0; width: 34px; height: 34px; border-radius: 50%; font-size: 18px; line-height: 1; padding: 0; opacity: 0; transition: opacity .15s; }
+  .card .img .nav.prev { left: 8px; } .card .img .nav.next { right: 8px; }
+  .card:hover .img .nav { opacity: 1; }
+  @media (hover: none) { .card .img .nav { opacity: .8; } }
+  .card .img .counter { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.55); color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 10px; font-variant-numeric: tabular-nums; }
+  .card .body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 4px; }
+  .price { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .price .drop { font-size: 12px; font-weight: 600; color: var(--warn); margin-left: 6px; }
+  .price .was { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .facts { font-variant-numeric: tabular-nums; }
+  .addr { color: var(--muted); font-size: 13px; }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .tag { font-size: 11px; padding: 2px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .tag.miss { background: var(--warn); color: #fff; }
+  .card.near { opacity: .82; } .card.near:hover { opacity: 1; }
+  .pay { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pay b { color: var(--ink); }
+  .pay.over { color: var(--warn); font-weight: 600; }
+  .paybox { display: grid; grid-template-columns: auto auto; gap: 2px 16px; justify-content: start; font-variant-numeric: tabular-nums; }
+  .kv .paybox span { display: inline; text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--ink); }
+  #help { width: min(780px, 94vw); }
+  #help .dlg-body { line-height: 1.6; }
+  #help h2 { font-size: 16px; margin: 26px 0 6px; padding-top: 14px; border-top: 1px solid var(--line); }
+  #help h2:first-of-type { border-top: 0; padding-top: 0; margin-top: 4px; }
+  #help ul { padding-left: 20px; margin: 6px 0; }
+  #help table { border-collapse: collapse; margin: 8px 0; font-variant-numeric: tabular-nums; }
+  #help td { padding: 3px 14px 3px 0; vertical-align: top; }
+  #help td:last-child { text-align: right; padding-right: 0; }
+  #help tr.sum td { font-weight: 700; border-top: 1px solid var(--line); }
+  #help .note { color: var(--muted); font-size: 13px; }
+  #help .toc { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; }
+  #help .toc a { color: var(--accent); }
+  .kv .paybox span:nth-child(even) { text-align: right; }
+  .kv .paybox span.over { color: var(--warn); font-weight: 700; }
+  .paybox .tot { font-weight: 700; border-top: 1px solid var(--line); padding-top: 3px; }
+  .tag.plain { background: var(--bg); color: var(--muted); }
+  .st-FOR_SALE { background: var(--active); } .st-PENDING, .st-CONTINGENT { background: var(--pending); } .st-SOLD { background: var(--sold); }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  dialog { border: 0; border-radius: 12px; padding: 0; width: min(920px, 94vw); max-height: 90vh; background: var(--panel); color: var(--ink); }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  .gallery img { transition: opacity .15s; } .gallery img:hover { opacity: .85; }
+  #lb { width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; border-radius: 0; background: #000; color: #fff; overflow: hidden; }
+  #lb::backdrop { background: #000; }
+  #lb-img { position: absolute; inset: 0 0 84px 0; width: 100%; height: calc(100% - 84px); object-fit: contain; user-select: none; }
+  .lb-btn { position: absolute; background: rgba(255,255,255,.12); color: #fff; border: 0; border-radius: 50%; width: 52px; height: 52px; font-size: 30px; line-height: 1; padding: 0; }
+  .lb-btn:hover { background: rgba(255,255,255,.25); }
+  .lb-prev { left: 16px; top: calc(50% - 68px); } .lb-next { right: 16px; top: calc(50% - 68px); }
+  .lb-close { right: 16px; top: 16px; width: 42px; height: 42px; font-size: 20px; }
+  #lb-count { position: absolute; left: 20px; top: 24px; font-size: 14px; opacity: .8; font-variant-numeric: tabular-nums; }
+  #lb-strip { position: absolute; left: 0; right: 0; bottom: 0; height: 84px; display: flex; gap: 6px; padding: 10px 16px; overflow-x: auto; background: rgba(255,255,255,.04); }
+  #lb-strip img { height: 64px; aspect-ratio: 4/3; object-fit: cover; border-radius: 4px; opacity: .5; cursor: pointer; flex: none; border: 2px solid transparent; }
+  #lb-strip img.on { opacity: 1; border-color: #fff; }
+  .dlg-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 2; }
+  .dlg-head .spacer { flex: 1; }
+  .dlg-body { padding: 16px 18px 22px; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; margin-bottom: 14px; }
+  .gallery img { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 6px; cursor: zoom-in; }
+  .kv { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 16px; margin: 12px 0; }
+  .kv div span { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  .desc { white-space: pre-wrap; line-height: 1.55; }
+  .desc mark { background: var(--accent-soft); color: var(--accent); padding: 0 2px; border-radius: 2px; }
+  .links { display: flex; gap: 8px; flex-wrap: wrap; }
+  .links a { color: var(--accent); }
+  textarea { width: 100%; min-height: 60px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; padding: 8px; }
+  @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">House Hunter</h1>
+  <span class="meta" id="updated"></span>
+  <span class="spacer"></span>
+  <button id="help-btn">How this works</button>
+  <button id="reset">Reset to my criteria</button>
+</header>
+<div class="layout">
+  <aside id="filters">
+    <h3>Status</h3>
+    <label class="chk"><input type="checkbox" data-status="FOR_SALE" checked> For sale <span class="n" id="n-FOR_SALE"></span></label>
+    <label class="chk"><input type="checkbox" data-status="PENDING"> Pending / contingent <span class="n" id="n-PENDING"></span></label>
+    <label class="chk"><input type="checkbox" data-status="SOLD"> Sold, last <span id="sold-days">180</span> days <span class="n" id="n-SOLD"></span></label>
+
+    <h3>Neighborhoods</h3>
+    <div id="hoods"></div>
+    <div class="row"><button id="hoods-all">All</button><button id="hoods-none">None</button></div>
+
+    <h3>Price</h3>
+    <div class="row"><label>Min<input type="number" id="price-min" step="10000"></label><label>Max<input type="number" id="price-max" step="10000"></label></div>
+
+    <h3>Size</h3>
+    <div class="row"><label>Min beds<input type="number" id="beds-min" min="0"></label><label>Min baths<input type="number" id="baths-min" min="0" step="0.5"></label></div>
+    <label class="chk"><input type="checkbox" id="office-ok"> Allow 2 beds if office/den/study</label>
+    <div class="row"><label>Min sq ft<input type="number" id="sqft-min" step="100"></label><label>Built after<input type="number" id="year-min" step="10"></label></div>
+
+    <h3>Type</h3>
+    <label class="chk"><input type="checkbox" data-style="SINGLE_FAMILY" checked> Single family <span class="n" id="n-SINGLE_FAMILY"></span></label>
+    <label class="chk"><input type="checkbox" data-style="TOWNHOMES" checked> Townhouse <span class="n" id="n-TOWNHOMES"></span></label>
+    <label class="chk"><input type="checkbox" data-style="CONDOS" checked> Condo / townhouse <span class="n" id="n-CONDOS"></span></label>
+    <p class="hint">Many townhouses are legally condos, so listings type them that way.</p>
+
+    <h3>Must haves</h3>
+    <label class="chk"><input type="checkbox" id="need-gb"> Garage or basement</label>
+    <label class="chk"><input type="checkbox" id="need-garage"> Garage specifically</label>
+    <label class="chk"><input type="checkbox" id="need-basement"> Basement specifically</label>
+    <div class="row"><label>Yard: min lot sq ft<input type="number" id="lot-min" step="500"></label></div>
+    <label class="chk"><input type="checkbox" id="yard-text"> …or fenced/back yard mentioned</label>
+    <p class="hint">Townhouse lots are often listed tiny even with a private yard; this catches them.</p>
+    <label class="chk"><input type="checkbox" id="show-near"> Also show near misses <span class="n" id="n-near"></span></label>
+    <p class="hint">Homes that pass everything except garage/basement or yard, marked with a red ✗.</p>
+    <div class="row"><label>Max HOA $/mo<input type="number" id="hoa-max" step="25"></label></div>
+
+    <h3>Other</h3>
+    <label class="chk"><input type="checkbox" id="hide-fixer"> Hide as-is / investor specials</label>
+    <label class="chk"><input type="checkbox" id="drops-only"> Price drops only</label>
+    <div class="row"><label>Listed within days<input type="number" id="days-max"></label></div>
+    <div class="row"><label>Keyword in description<input type="search" id="kw" placeholder="e.g. porch, screened"></label></div>
+
+    <h3>Monthly payment</h3>
+    <label class="chk"><input type="checkbox" id="all-in"> All-in: add upkeep &amp; utilities</label>
+    <p class="hint">Compares to rent. Off shows just the mortgage payment (principal, interest, tax, insurance, HOA).</p>
+    <div class="row"><label>Max $/mo<input type="number" id="pay-max" step="100" placeholder="any"></label></div>
+    <div class="row"><label>Gross income $/yr<input type="number" data-pay="income" step="5000"></label><label>Other debts $/mo<input type="number" data-pay="debts" step="50"></label></div>
+    <label class="chk"><input type="checkbox" id="within-dti"> Only within 28% / 36% guideline</label>
+    <p class="hint">28% = mortgage payment ÷ gross income. 36% = mortgage payment + other debts (car, loans).</p>
+    <div class="row"><label>Rate %<input type="number" data-pay="rate" step="0.05"></label><label>Down %<input type="number" data-pay="down" step="1"></label></div>
+    <div class="row"><label>Term (yrs)<input type="number" data-pay="term" step="5"></label><label>Insurance %/yr<input type="number" data-pay="insPct" step="0.05"></label></div>
+    <details class="hint" style="margin-left:0">
+      <summary>Property tax (mills)</summary>
+      <div id="mills"></div>
+      <p id="tax-hint"></p>
+    </details>
+    <label class="chk"><input type="checkbox" id="hs-on"> Apply homestead exemption</label>
+    <details class="hint" style="margin-left:0">
+      <summary>Homestead savings ($/yr)</summary>
+      <div id="hs"></div>
+      <p>Basic exemptions are usually fixed dollar amounts off assessed value, so savings barely change with price. They typically start the year after you move in, and you have to apply.</p>
+    </details>
+    <div class="row"><label>Maintenance %/yr<input type="number" data-pay="maintPct" step="0.25"></label><label>Utilities+ $/mo<input type="number" data-pay="utilities" step="25"></label></div>
+    <p class="hint" style="margin-left:0">Utilities+ = water/sewer, extra power vs. an apartment, pest control, yard. Condos get half maintenance (HOA covers the exterior).</p>
+    <button id="pay-reset" style="margin-top:6px">Reset payment assumptions</button>
+
+    <h3>My list</h3>
+    <label class="chk"><input type="checkbox" id="favs-only"> Favorites only <span class="n" id="n-favs"></span></label>
+    <label class="chk"><input type="checkbox" id="show-hidden"> Show hidden <span class="n" id="n-hidden"></span></label>
+  </aside>
+  <main>
+    <div id="map"></div>
+    <div class="toolbar">
+      <span class="count" id="count"></span>
+      <span class="stats" id="stats"></span>
+      <span class="spacer"></span>
+      <select id="sort">
+        <option value="newest">Newest listed</option>
+        <option value="price-asc">Price: low to high</option>
+        <option value="pay-asc">Monthly payment: low to high</option>
+        <option value="price-desc">Price: high to low</option>
+        <option value="ppsf-asc">$/sq ft: low to high</option>
+        <option value="value">Best value vs. sold comps</option>
+        <option value="sqft-desc">Largest home</option>
+        <option value="lot-desc">Largest lot</option>
+        <option value="drop-desc">Biggest price drop</option>
+      </select>
+    </div>
+    <div class="grid" id="grid"></div>
+  </main>
+</div>
+<dialog id="dlg"></dialog>
+<dialog id="help"></dialog>
+<dialog id="lb">
+  <img id="lb-img" alt="">
+  <button class="lb-btn lb-prev" data-lb="-1" title="Previous (←)">‹</button>
+  <button class="lb-btn lb-next" data-lb="1" title="Next (→)">›</button>
+  <button class="lb-btn lb-close" data-lb="close" title="Close (Esc)">✕</button>
+  <span id="lb-count"></span>
+  <div id="lb-strip"></div>
+</dialog>
+
+<script>
+const CFG = window.HOUSE_CONFIG || {};
+const CRIT = CFG.criteria || {}, PCFG = CFG.payment || {}, SEARCH = CFG.search || {};
+const DATA = window.HOUSE_DATA || { listings: [], updated: null };
+const ALL = DATA.listings.map(l => ({ ...l, statusGroup: l.status === 'CONTINGENT' ? 'PENDING' : l.status }));
+const HOODS = [...new Set((window.HOUSE_BOUNDARIES?.features || []).map(f => f.properties.name).concat(ALL.map(l => l.neighborhood)))].sort();
+const STORE = 'house-hunter-v1';
+const DEFAULTS = {
+  status: ['FOR_SALE'], hoods: HOODS, priceMin: null, priceMax: CRIT.price_max ?? SEARCH.price_max ?? null,
+  bedsMin: CRIT.beds_min ?? null, bathsMin: CRIT.baths_min ?? null, officeOk: CRIT.office_counts_as_bedroom ?? true, sqftMin: null, yearMin: null,
+  styles: ['SINGLE_FAMILY', 'TOWNHOMES', 'CONDOS'], needGB: CRIT.need_garage_or_basement ?? false, needGarage: false, needBasement: false,
+  lotMin: CRIT.lot_min_sqft ?? null, yardText: CRIT.fenced_yard_counts_as_yard ?? true, showNear: CRIT.show_near_misses ?? true, hoaMax: null, payMax: null, withinDti: false, hideFixer: false, dropsOnly: false, daysMax: null, kw: '',
+  favsOnly: false, showHidden: false, sort: 'newest',
+};
+const saved = JSON.parse(localStorage.getItem(STORE) || '{}');
+// v2 added the condo type; switch it on for filters saved before then.
+if (saved.filters && (saved.version || 1) < 2 && !saved.filters.styles.includes('CONDOS')) saved.filters.styles.push('CONDOS');
+const state = { version: 2, filters: { ...DEFAULTS, ...(saved.filters || {}) }, favs: saved.favs || {}, hidden: saved.hidden || {}, notes: saved.notes || {}, seen: saved.seen || {} };
+const save = () => localStorage.setItem(STORE, JSON.stringify({ ...state, pay }));
+
+const $ = s => document.querySelector(s);
+const fmt$ = n => n == null ? '—' : '$' + Math.round(n).toLocaleString();
+const fmtK = n => n == null ? '—' : n >= 1e6 ? '$' + (n / 1e6).toFixed(2) + 'M' : '$' + Math.round(n / 1000) + 'k';
+const fmtN = n => n == null ? '—' : Math.round(n).toLocaleString();
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const daysSince = d => d ? (Date.now() - new Date(d)) / 864e5 : null;
+const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+// ---------- monthly payment ----------
+// Defaults come from config.yaml (payment section); the sidebar can override them.
+const TAX_AREAS = PCFG.tax_areas || {};
+const PAY_DEFAULTS = {
+  rate: PCFG.rate ?? 7, down: PCFG.down_pct ?? 20, term: PCFG.term_years ?? 30, insPct: PCFG.insurance_pct ?? 0.5,
+  income: PCFG.income ?? 0, debts: PCFG.other_debts ?? 0, homestead: true, allIn: true,
+  maintPct: PCFG.maintenance_pct ?? 1.25, utilities: PCFG.utilities_monthly ?? 300,
+  mills: Object.fromEntries(Object.entries(TAX_AREAS).map(([k, v]) => [k, v.mills])),
+  hsSave: Object.fromEntries(Object.entries(TAX_AREAS).map(([k, v]) => [k, v.homestead_savings ?? 0])),
+};
+const ASSESS = PCFG.assessment_ratio ?? 1, DEFAULT_MILLS = PCFG.default_mills ?? 10;
+const savedPay = saved.pay || {};
+const pay = { ...PAY_DEFAULTS, ...savedPay, mills: { ...PAY_DEFAULTS.mills, ...(savedPay.mills || {}) }, hsSave: { ...PAY_DEFAULTS.hsSave, ...(savedPay.hsSave || {}) } };
+const millsFor = l => pay.mills[l.tax_area] ?? DEFAULT_MILLS;
+function payment(l) {
+  if (!l.price) return null;
+  const loan = l.price * (1 - pay.down / 100), r = pay.rate / 1200, n = pay.term * 12;
+  const pi = r ? loan * r / (1 - (1 + r) ** -n) : loan / n;
+  // Condo-typed units mostly need only an HO-6 policy; the HOA insures the structure.
+  const ins = l.price * (l.style === 'CONDOS' ? pay.insPct / 2 : pay.insPct) / 100 / 12;
+  const grossTax = l.price * ASSESS * millsFor(l) / 1000 / 12;
+  const hs = pay.homestead ? Math.min(grossTax, (pay.hsSave[l.tax_area] ?? 0) / 12) : 0;
+  const tax = grossTax - hs;
+  const hoa = l.hoa_fee || 0;
+  const mortgage = pi + tax + ins + hoa;
+  const maint = l.price * (l.style === 'CONDOS' ? pay.maintPct / 2 : pay.maintPct) / 100 / 12;
+  const util = pay.utilities;
+  const allIn = mortgage + maint + util;
+  const monthlyIncome = pay.income / 12;
+  const front = monthlyIncome ? mortgage / monthlyIncome : null;
+  const back = monthlyIncome ? (mortgage + pay.debts) / monthlyIncome : null;
+  return { pi, grossTax, hs, tax, ins, hoa, mortgage, maint, util, allIn, total: pay.allIn ? allIn : mortgage, down: l.price * pay.down / 100,
+           front, back, allInPct: monthlyIncome ? allIn / monthlyIncome : null, overDti: front > 0.28 || back > 0.36 };
+}
+const pct = x => Math.round(x * 100) + '%';
+const payTitle = p => `Principal & interest ${fmt$(p.pi)} + tax ${fmt$(p.tax)} + insurance ${fmt$(p.ins)}${p.hoa ? ' + HOA ' + fmt$(p.hoa) : ''} = ${fmt$(p.mortgage)}`
+  + (pay.allIn ? `; + maintenance ${fmt$(p.maint)} + utilities ${fmt$(p.util)} = ${fmt$(p.allIn)}` : '');
+
+const ppsf = l => l.price && l.sqft ? l.price / l.sqft : null;
+
+// Sold $/sqft by neighborhood (falls back to all sold) — used for "value" comparisons.
+const soldPpsf = {};
+for (const h of HOODS) soldPpsf[h] = median(ALL.filter(l => l.status === 'SOLD' && l.neighborhood === h && ppsf(l)).map(ppsf));
+const allSoldPpsf = median(ALL.filter(l => l.status === 'SOLD' && ppsf(l)).map(ppsf));
+const compFor = l => soldPpsf[l.neighborhood] ?? allSoldPpsf;
+const valueRatio = l => ppsf(l) && compFor(l) ? ppsf(l) / compFor(l) : null;
+
+// "Soft" must-haves: when near misses are shown, homes failing only these still appear, flagged.
+function misses(l, f) {
+  const m = [];
+  if (f.needGB && !(l.features.garage || l.features.basement)) m.push('No garage or basement');
+  if (f.needGarage && !l.features.garage) m.push('No garage');
+  if (f.needBasement && !l.features.basement) m.push('No basement');
+  if (!hasYard(l, f)) m.push(l.lot_sqft ? `Small lot (${fmtN(l.lot_sqft)} ft²)` : 'Lot size unknown');
+  return m;
+}
+const hasYard = (l, f) => (f.lotMin == null || (l.lot_sqft ?? 0) >= f.lotMin) || (f.yardText && l.features.fenced_yard);
+
+function matches(l, f, skip = '') {
+  if (skip !== 'status' && !f.status.includes(l.statusGroup)) return false;
+  if (skip !== 'hoods' && !f.hoods.includes(l.neighborhood)) return false;
+  if (skip !== 'styles' && !f.styles.includes(l.style)) return false;
+  if (f.priceMin != null && (l.price ?? 0) < f.priceMin) return false;
+  if (f.priceMax != null && l.status !== 'SOLD' && (l.price ?? Infinity) > f.priceMax) return false;
+  if (f.bedsMin != null) {
+    const ok = (l.beds ?? 0) >= f.bedsMin || (f.officeOk && l.beds === f.bedsMin - 1 && l.features.office);
+    if (!ok) return false;
+  }
+  if (f.bathsMin != null && (l.baths ?? 0) < f.bathsMin) return false;
+  if (f.sqftMin != null && (l.sqft ?? 0) < f.sqftMin) return false;
+  if (f.yearMin != null && (l.year_built ?? 0) < f.yearMin) return false;
+  if (misses(l, f).length && !f.showNear) return false;
+  if (f.hoaMax != null && (l.hoa_fee ?? 0) > f.hoaMax) return false;
+  if (f.payMax != null && l.status !== 'SOLD' && (payment(l)?.total ?? Infinity) > f.payMax) return false;
+  if (f.withinDti && l.status !== 'SOLD' && (!payment(l) || payment(l).overDti)) return false;
+  if (f.hideFixer && l.features.fixer) return false;
+  if (f.dropsOnly && !(l.price_drop > 0)) return false;
+  if (f.daysMax != null) { const d = daysSince(l.list_date); if (d == null || d > f.daysMax) return false; }
+  if (f.kw && !(l.description || '').toLowerCase().includes(f.kw.toLowerCase())) return false;
+  if (skip !== 'my') {
+    if (f.favsOnly && !state.favs[l.id]) return false;
+    if (!f.showHidden && state.hidden[l.id]) return false;
+  }
+  return true;
+}
+
+const SORTS = {
+  'newest': (a, b) => new Date(b.list_date || b.sold_date || 0) - new Date(a.list_date || a.sold_date || 0),
+  'pay-asc': (a, b) => (payment(a)?.total ?? 1e9) - (payment(b)?.total ?? 1e9),
+  'price-asc': (a, b) => (a.price ?? 1e12) - (b.price ?? 1e12),
+  'price-desc': (a, b) => (b.price ?? 0) - (a.price ?? 0),
+  'ppsf-asc': (a, b) => (ppsf(a) ?? 1e9) - (ppsf(b) ?? 1e9),
+  'value': (a, b) => (valueRatio(a) ?? 9) - (valueRatio(b) ?? 9),
+  'sqft-desc': (a, b) => (b.sqft ?? 0) - (a.sqft ?? 0),
+  'lot-desc': (a, b) => (b.lot_sqft ?? 0) - (a.lot_sqft ?? 0),
+  'drop-desc': (a, b) => (b.price_drop ?? 0) - (a.price_drop ?? 0),
+};
+
+function tagsFor(l) {
+  const t = [], F = l.features;
+  const d = daysSince(l.list_date);
+  if (l.status !== 'SOLD' && d != null && d <= 7) t.push(['New this week', '']);
+  else if (l.status !== 'SOLD' && !state.seen[l.id]) t.push(['Unseen', 'plain']);
+  if (l.price_drop > 0) t.push(['↓ ' + fmtK(l.price_drop), 'warn']);
+  if (F.garage) t.push([l.garage_spaces ? `${l.garage_spaces}-car garage` : 'Garage', '']);
+  if (F.finished_basement) t.push(['Finished basement', '']); else if (F.basement) t.push(['Basement', '']);
+  if (F.office) t.push(['Office/den', '']);
+  if (F.fenced_yard) t.push(['Fenced yard', '']);
+  if (F.renovated) t.push(['Updated', 'plain']);
+  if (F.fixer) t.push(['As-is / investor', 'warn']);
+  if (l.hoa_fee) t.push([`HOA $${l.hoa_fee}`, 'plain']);
+  const v = valueRatio(l);
+  if (l.status !== 'SOLD' && v != null && v < 0.9) t.push([`${Math.round((1 - v) * 100)}% under area $/ft²`, '']);
+  return t;
+}
+
+const STYLE_LABEL = { SINGLE_FAMILY: 'Single family', TOWNHOMES: 'Townhouse', CONDOS: 'Condo/townhouse' };
+const statusLabel = s => ({ FOR_SALE: 'For sale', PENDING: 'Pending', CONTINGENT: 'Contingent', SOLD: 'Sold' }[s] || s);
+
+const photosOf = l => l.photos.length ? l.photos : [l.photo].filter(Boolean);
+
+function flip(cardEl, l, step) {
+  const imgEl = cardEl.querySelector('.img'), ph = photosOf(l);
+  const i = (Number(imgEl.dataset.idx) + step + ph.length) % ph.length;
+  imgEl.dataset.idx = i;
+  imgEl.style.backgroundImage = `url('${ph[i]}')`;
+  imgEl.querySelector('.counter').textContent = `${i + 1} / ${ph.length}`;
+  new Image().src = ph[(i + step + ph.length) % ph.length]; // preload the next one in that direction
+}
+
+function card(l) {
+  const miss = misses(l, state.filters);
+  const priceLine = l.status === 'SOLD'
+    ? `${fmt$(l.price)} <span class="was">sold ${l.sold_date ? new Date(l.sold_date).toLocaleDateString() : ''}${l.list_price && l.list_price !== l.price ? ' · listed ' + fmtK(l.list_price) : ''}</span>`
+    : `${fmt$(l.price)}${l.price_drop > 0 ? `<span class="drop">↓ ${fmtK(l.price_drop)}</span><span class="was">was ${fmtK(l.original_price)}</span>` : ''}`;
+  const d = daysSince(l.list_date);
+  return `<div class="card${miss.length ? ' near' : ''}" data-id="${l.id}">
+    <div class="img" data-idx="0" style="background-image:url('${esc(photosOf(l)[0] || '')}')">
+      ${photosOf(l).length > 1 ? `<button class="nav prev" data-act="prev" title="Previous photo">‹</button><button class="nav next" data-act="next" title="Next photo">›</button><span class="counter">1 / ${photosOf(l).length}</span>` : ''}
+      <span class="status st-${l.status}">${statusLabel(l.status)}</span>
+      <span class="acts">
+        <button data-act="fav" class="${state.favs[l.id] ? 'on' : ''}" title="Favorite">${state.favs[l.id] ? '★' : '☆'}</button>
+        <button data-act="hide" title="${state.hidden[l.id] ? 'Unhide' : 'Hide'}">${state.hidden[l.id] ? '↺' : '✕'}</button>
+      </span>
+    </div>
+    <div class="body">
+      <div class="price">${priceLine}</div>
+      ${l.status !== 'SOLD' && payment(l) ? `<div class="pay" title="${payTitle(payment(l))}">≈ <b>${fmt$(payment(l).total)}</b>/mo ${pay.allIn ? `all-in · ${fmt$(payment(l).mortgage)} mortgage` : `with ${pay.down}% down`}</div>
+      ${payment(l).front != null ? (p => `<div class="pay${p.overDti ? ' over' : ''}">${pct(p.front)} / ${pct(p.back)} of income${p.overDti ? ' — over 28/36' : ''}</div>`)(payment(l)) : ''}` : ''}
+      <div class="facts">${l.beds ?? '?'} bd · ${l.baths} ba · ${fmtN(l.sqft)} ft² · lot ${fmtN(l.lot_sqft)} ft²</div>
+      <div class="addr">${esc(l.address)}</div>
+      <div class="addr">${esc(l.neighborhood)} · ${STYLE_LABEL[l.style] || l.style}${l.year_built ? ' · built ' + l.year_built : ''}${l.status !== 'SOLD' && d != null ? ` · ${Math.round(d)}d on market` : ''}</div>
+      <div class="tags">${miss.map(m => `<span class="tag miss">✗ ${esc(m)}</span>`).join('')}${tagsFor(l).map(([t, c]) => `<span class="tag ${c}">${esc(t)}</span>`).join('')}</div>
+      ${state.notes[l.id] ? `<div class="addr">📝 ${esc(state.notes[l.id])}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+// ---------- map ----------
+const map = L.map('map', { scrollWheelZoom: false, zoomSnap: 0.25 });
+L.tileLayer(CFG.map?.tile_url || 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+  attribution: CFG.map?.attribution || 'Tiles &copy; Esri', maxZoom: 19,
+}).addTo(map);
+const bounds = L.geoJSON(window.HOUSE_BOUNDARIES, {
+  style: { color: '#2f6f5e', weight: 1.5, fillOpacity: 0.05 },
+  onEachFeature: (f, layer) => layer.bindTooltip(f.properties.name, { sticky: true }),
+}).addTo(map);
+map.fitBounds(bounds.getBounds(), { padding: [10, 10] });
+const markers = L.layerGroup().addTo(map);
+const COLORS = { FOR_SALE: '#2f6f5e', PENDING: '#c08a12', CONTINGENT: '#c08a12', SOLD: '#6d5bb5' };
+
+function drawMap(list) {
+  markers.clearLayers();
+  for (const l of list) {
+    if (l.lat == null) continue;
+    const m = L.circleMarker([l.lat, l.lon], {
+      radius: state.favs[l.id] ? 9 : 6, color: '#fff', weight: 1.5,
+      fillColor: state.favs[l.id] ? '#d9a400' : COLORS[l.status], fillOpacity: misses(l, state.filters).length ? 0.35 : 0.9,
+    }).bindTooltip(`${fmtK(l.price)} · ${l.beds}bd/${l.baths}ba · ${esc(l.address)}`);
+    m.on('click', () => openDetail(l.id));
+    m.on('mouseover', () => document.querySelector(`.card[data-id="${l.id}"]`)?.classList.add('hl'));
+    m.on('mouseout', () => document.querySelector(`.card[data-id="${l.id}"]`)?.classList.remove('hl'));
+    markers.addLayer(m);
+  }
+}
+
+// ---------- render ----------
+function render() {
+  const f = state.filters;
+  // Full matches first, then near misses, each in the chosen sort order.
+  const list = ALL.filter(l => matches(l, f)).sort((a, b) => (misses(a, f).length > 0) - (misses(b, f).length > 0) || SORTS[f.sort](a, b));
+  const nNear = list.filter(l => misses(l, f).length).length;
+  $('#grid').innerHTML = list.length ? list.map(card).join('') : '<div class="empty">Nothing matches. Loosen a filter on the left.</div>';
+  const active = list.filter(l => l.status !== 'SOLD');
+  const nFull = list.length - nNear;
+  $('#count').textContent = `${nFull} match${nFull === 1 ? '' : 'es'}` + (nNear ? ` + ${nNear} near miss${nNear === 1 ? '' : 'es'}` : '');
+  const mp = median(active.map(l => l.price).filter(Boolean));
+  const ms = median(list.filter(l => l.status === 'SOLD').map(l => l.price).filter(Boolean));
+  const mm = median(active.map(l => payment(l)?.total).filter(Boolean));
+  $('#stats').textContent = [mp && `median asking ${fmtK(mp)}`, mm && `median ${fmt$(mm)}/mo${pay.allIn ? " all-in" : ""}`, ms && `median sold ${fmtK(ms)}`].filter(Boolean).join(' · ');
+  drawMap(list);
+
+  // facet counts (ignore the facet's own filter so you can see what toggling would add)
+  for (const s of ['FOR_SALE', 'PENDING', 'SOLD']) $(`#n-${s}`).textContent = ALL.filter(l => l.statusGroup === s && matches(l, f, 'status')).length;
+  for (const s of ['SINGLE_FAMILY', 'TOWNHOMES', 'CONDOS']) $(`#n-${s}`).textContent = ALL.filter(l => l.style === s && matches(l, f, 'styles')).length;
+  for (const h of HOODS) { const el = document.getElementById('nh-' + h); if (el) el.textContent = ALL.filter(l => l.neighborhood === h && matches(l, f, 'hoods')).length; }
+  $('#n-near').textContent = ALL.filter(l => misses(l, { ...f }).length && matches(l, { ...f, showNear: true })).length;
+  $('#n-favs').textContent = Object.keys(state.favs).length || '';
+  $('#n-hidden').textContent = Object.keys(state.hidden).length || '';
+  save();
+}
+
+// ---------- filters UI ----------
+$('#hoods').innerHTML = HOODS.map(h => `<label class="chk"><input type="checkbox" data-hood="${esc(h)}"> ${esc(h)} <span class="n" id="nh-${esc(h)}"></span></label>`).join('');
+const NUM = { 'price-min': 'priceMin', 'price-max': 'priceMax', 'beds-min': 'bedsMin', 'baths-min': 'bathsMin', 'sqft-min': 'sqftMin', 'year-min': 'yearMin', 'lot-min': 'lotMin', 'hoa-max': 'hoaMax', 'pay-max': 'payMax', 'days-max': 'daysMax' };
+const BOOL = { 'office-ok': 'officeOk', 'need-gb': 'needGB', 'need-garage': 'needGarage', 'need-basement': 'needBasement', 'yard-text': 'yardText', 'show-near': 'showNear', 'within-dti': 'withinDti', 'hide-fixer': 'hideFixer', 'drops-only': 'dropsOnly', 'favs-only': 'favsOnly', 'show-hidden': 'showHidden' };
+
+function syncInputs() {
+  const f = state.filters;
+  document.querySelectorAll('[data-status]').forEach(el => el.checked = f.status.includes(el.dataset.status));
+  document.querySelectorAll('[data-style]').forEach(el => el.checked = f.styles.includes(el.dataset.style));
+  document.querySelectorAll('[data-hood]').forEach(el => el.checked = f.hoods.includes(el.dataset.hood));
+  for (const [id, k] of Object.entries(NUM)) document.getElementById(id).value = f[k] ?? '';
+  for (const [id, k] of Object.entries(BOOL)) document.getElementById(id).checked = !!f[k];
+  $('#kw').value = f.kw; $('#sort').value = f.sort;
+  document.querySelectorAll('[data-pay]').forEach(el => el.value = pay[el.dataset.pay]);
+  document.querySelectorAll('[data-mill]').forEach(el => el.value = pay.mills[el.dataset.mill]);
+  document.querySelectorAll('[data-hs]').forEach(el => el.value = pay.hsSave[el.dataset.hs]);
+  $('#hs-on').checked = pay.homestead; $('#all-in').checked = pay.allIn;
+}
+$('#mills').innerHTML = Object.keys(PAY_DEFAULTS.mills).map(k => `<div class="row"><label>${esc(k)}<input type="number" step="0.1" data-mill="${esc(k)}"></label></div>`).join('');
+$('#hs').innerHTML = Object.keys(PAY_DEFAULTS.hsSave).map(k => `<div class="row"><label>${esc(k)}<input type="number" step="10" data-hs="${esc(k)}"></label></div>`).join('');
+$('#pay-reset').onclick = () => { Object.assign(pay, structuredClone(PAY_DEFAULTS)); syncInputs(); render(); };
+
+$('#filters').addEventListener('input', e => {
+  const el = e.target, f = state.filters;
+  if (el.dataset.status) f.status = [...document.querySelectorAll('[data-status]:checked')].map(x => x.dataset.status);
+  else if (el.dataset.style) f.styles = [...document.querySelectorAll('[data-style]:checked')].map(x => x.dataset.style);
+  else if (el.dataset.hood) f.hoods = [...document.querySelectorAll('[data-hood]:checked')].map(x => x.dataset.hood);
+  else if (NUM[el.id]) f[NUM[el.id]] = el.value === '' ? null : Number(el.value);
+  else if (BOOL[el.id]) f[BOOL[el.id]] = el.checked;
+  else if (el.id === 'kw') f.kw = el.value.trim();
+  else if (el.dataset.pay) { if (el.value !== '') pay[el.dataset.pay] = Number(el.value); }
+  else if (el.dataset.mill) { if (el.value !== '') pay.mills[el.dataset.mill] = Number(el.value); }
+  else if (el.dataset.hs) { if (el.value !== '') pay.hsSave[el.dataset.hs] = Number(el.value); }
+  else if (el.id === 'hs-on') pay.homestead = el.checked;
+  else if (el.id === 'all-in') pay.allIn = el.checked;
+  render();
+});
+$('#sort').addEventListener('change', e => { state.filters.sort = e.target.value; render(); });
+$('#hoods-all').onclick = () => { state.filters.hoods = [...HOODS]; syncInputs(); render(); };
+$('#hoods-none').onclick = () => { state.filters.hoods = []; syncInputs(); render(); };
+$('#reset').onclick = () => { state.filters = { ...DEFAULTS }; syncInputs(); render(); };
+
+$('#grid').addEventListener('click', e => {
+  const c = e.target.closest('.card'); if (!c) return;
+  const id = c.dataset.id, act = e.target.closest('button')?.dataset.act;
+  if (act === 'prev' || act === 'next') flip(c, ALL.find(x => x.id === id), act === 'next' ? 1 : -1);
+  else if (act === 'fav') { state.favs[id] ? delete state.favs[id] : state.favs[id] = 1; render(); }
+  else if (act === 'hide') { state.hidden[id] ? delete state.hidden[id] : state.hidden[id] = 1; render(); }
+  else openDetail(id);
+});
+$('#grid').addEventListener('mouseover', e => {
+  const c = e.target.closest('.card'); if (!c) return;
+  markers.eachLayer(m => { const l = ALL.find(x => x.id === c.dataset.id); if (l && m.getLatLng().equals([l.lat, l.lon])) m.openTooltip(); });
+});
+
+// ---------- detail dialog ----------
+const HIGHLIGHT = /\b(garage|basement|office|study|den|bonus room|fenced|back ?yard|yard|deck|patio|porch|carport|renovated|updated|new roof|hvac|as[- ]is|investor)\b/gi;
+function openDetail(id) {
+  const l = ALL.find(x => x.id === id); if (!l) return;
+  state.seen[id] = 1;
+  const comp = compFor(l), v = valueRatio(l);
+  const nearSold = ALL.filter(x => x.status === 'SOLD' && x.neighborhood === l.neighborhood && x.id !== l.id && x.beds === l.beds)
+    .sort((a, b) => new Date(b.sold_date) - new Date(a.sold_date)).slice(0, 5);
+  const zillow = 'https://www.zillow.com/homes/' + encodeURIComponent(l.address.replace(/,/g, '')).replace(/%20/g, '-') + '_rb/';
+  const gmaps = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.address)}`;
+  const dlg = $('#dlg');
+  dlg.innerHTML = `
+    <div class="dlg-head">
+      <div>
+        <div class="price">${fmt$(l.price)} ${l.price_drop > 0 ? `<span class="drop">↓ ${fmtK(l.price_drop)} from ${fmtK(l.original_price)}</span>` : ''}</div>
+        <div>${esc(l.address)}</div>
+        <div class="addr">${statusLabel(l.status)} · ${esc(l.neighborhood)}</div>
+      </div>
+      <span class="spacer"></span>
+      <button data-act="fav">${state.favs[id] ? '★ Favorited' : '☆ Favorite'}</button>
+      <button data-act="close">Close</button>
+    </div>
+    <div class="dlg-body">
+      <div class="links">
+        <a href="${esc(l.url)}" target="_blank" rel="noopener">Realtor.com listing ↗</a>
+        <a href="${zillow}" target="_blank" rel="noopener">Find on Zillow ↗</a>
+        <a href="${gmaps}" target="_blank" rel="noopener">Google Maps ↗</a>
+      </div>
+      <div class="kv">
+        <div><span>Beds / baths</span>${l.beds} bd · ${l.full_baths} full${l.half_baths ? ' + ' + l.half_baths + ' half' : ''}</div>
+        <div><span>Home</span>${fmtN(l.sqft)} ft² · ${l.stories ?? '?'} stories</div>
+        <div><span>Lot</span>${fmtN(l.lot_sqft)} ft²${l.lot_sqft ? ' (' + (l.lot_sqft / 43560).toFixed(2) + ' ac)' : ''}</div>
+        <div><span>Built</span>${l.year_built ?? '—'}</div>
+        <div><span>Garage</span>${l.garage_spaces ? l.garage_spaces + (l.garage_spaces === 1 ? ' space' : ' spaces') : l.features.garage ? 'Mentioned' : '—'}</div>
+        <div><span>HOA</span>${l.hoa_fee ? '$' + l.hoa_fee + '/mo' : '—'}</div>
+        <div><span>$/ft²</span>${ppsf(l) ? '$' + Math.round(ppsf(l)) : '—'}${comp ? ` <small class="addr">(area sold median $${Math.round(comp)}${v ? `, ${v < 1 ? Math.round((1 - v) * 100) + '% under' : Math.round((v - 1) * 100) + '% over'}` : ''})</small>` : ''}</div>
+        <div><span>Est. value</span>${fmt$(l.estimated_value)}</div>
+        ${l.status !== 'SOLD' && payment(l) ? (p => `<div style="grid-column: span 2"><span>Monthly payment · ${pay.down}% down (${fmt$(p.down)}) · ${pay.rate}% ${pay.term}-yr</span>
+          <div class="paybox"><span>Principal &amp; interest</span><span>${fmt$(p.pi)}</span>
+          <span>Property tax (${esc(l.tax_area || 'default rate')}, ${millsFor(l)} mills${p.hs ? `, after ${fmt$(p.hs)}/mo homestead` : ''})</span><span>${fmt$(p.tax)}</span>
+          <span>Insurance</span><span>${fmt$(p.ins)}</span>
+          ${p.hoa ? `<span>HOA</span><span>${fmt$(p.hoa)}</span>` : ''}
+          <span class="tot">Mortgage payment</span><span class="tot">${fmt$(p.mortgage)}</span>
+          <span>Maintenance (${l.style === 'CONDOS' ? pay.maintPct / 2 : pay.maintPct}%/yr)</span><span>${fmt$(p.maint)}</span>
+          <span>Utilities+ vs. an apartment</span><span>${fmt$(p.util)}</span>
+          <span class="tot">All-in monthly</span><span class="tot">${fmt$(p.allIn)}</span>
+          ${p.hs ? `<span>First year (before homestead)</span><span>${fmt$(p.allIn + p.hs)}</span>` : ''}
+          ${p.front != null ? `<span class="tot">Share of ${fmtK(pay.income)} gross income</span><span class="tot"></span>
+          <span>Mortgage payment (guideline ≤ 28%)</span><span class="${p.front > 0.28 ? 'over' : ''}">${pct(p.front)}</span>
+          <span>+ ${fmt$(pay.debts)} other debts (guideline ≤ 36%)</span><span class="${p.back > 0.36 ? 'over' : ''}">${pct(p.back)}</span>
+          <span>All-in housing</span><span>${pct(p.allInPct)}</span>` : ''}</div></div>`)(payment(l)) : ''}
+        <div><span>Listed</span>${l.list_date ? new Date(l.list_date).toLocaleDateString() : '—'}${l.days_on_mls != null ? ` · ${l.days_on_mls} days` : ''}</div>
+        <div><span>Agent</span>${esc(l.agent || '—')}<br><small class="addr">${esc(l.broker || '')}</small></div>
+      </div>
+      <h3>My notes</h3>
+      <textarea id="note" placeholder="Showing thoughts, questions for the agent…">${esc(state.notes[id] || '')}</textarea>
+      <h3>Description</h3>
+      <div class="desc">${esc(l.description).replace(HIGHLIGHT, m => `<mark>${m}</mark>`)}</div>
+      ${nearSold.length ? `<h3>Recent ${l.beds}-bed sales in ${esc(l.neighborhood)}</h3>
+        <div>${nearSold.map(s => `<div class="addr"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.address)}</a> — ${fmt$(s.price)} · ${fmtN(s.sqft)} ft² · ${s.sold_date ? new Date(s.sold_date).toLocaleDateString() : ''}</div>`).join('')}</div>` : ''}
+      <h3>Photos</h3>
+      <div class="gallery">${photosOf(l).map((p, i) => `<img loading="lazy" src="${esc(p)}" data-i="${i}" alt="Photo ${i + 1}">`).join('')}</div>
+    </div>`;
+  dlg.querySelector('[data-act=close]').onclick = () => dlg.close();
+  dlg.querySelector('[data-act=fav]').onclick = e => { state.favs[id] ? delete state.favs[id] : state.favs[id] = 1; e.target.textContent = state.favs[id] ? '★ Favorited' : '☆ Favorite'; render(); };
+  dlg.querySelector('#note').oninput = e => { const v = e.target.value.trim(); v ? state.notes[id] = v : delete state.notes[id]; save(); };
+  dlg.onclose = render;
+  dlg.onclick = e => {
+    if (e.target === dlg) dlg.close();
+    const img = e.target.closest('.gallery img'); if (img) openLightbox(photosOf(l), Number(img.dataset.i));
+  };
+  dlg.showModal();
+}
+
+// ---------- help ----------
+// Built when opened so every number reflects the current settings in the sidebar.
+function openHelp() {
+  // Example home: the typical asking price and most common tax area in the current data.
+  const act = ALL.filter(l => l.status !== 'SOLD' && l.price);
+  const exPrice = Math.round((median(act.map(l => l.price)) || 400000) / 5000) * 5000;
+  const areaCounts = {}; for (const l of act) if (l.tax_area) areaCounts[l.tax_area] = (areaCounts[l.tax_area] || 0) + 1;
+  const exArea = Object.entries(areaCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? Object.keys(pay.mills)[0] ?? null;
+  const ex = { price: exPrice, style: 'SINGLE_FAMILY', tax_area: exArea, hoa_fee: 0 };
+  const p = payment(ex);
+  const loan = ex.price - p.down, assessed = ex.price * ASSESS, mills = millsFor(ex);
+  const yrTax = assessed * mills / 1000, hsYr = p.hs * 12;
+  const inc = pay.income / 12;
+  const row = (a, b, cls = '') => `<tr class="${cls}"><td>${a}</td><td>${b}</td></tr>`;
+  const nActive = ALL.filter(l => l.status !== 'SOLD').length, nSold = ALL.length - nActive;
+  const dlg = $('#help');
+  dlg.innerHTML = `
+    <div class="dlg-head"><div><div class="price">How this works</div>
+      <div class="addr">Every number below uses the current settings in the sidebar.</div></div>
+      <span class="spacer"></span><button data-act="close">Close</button></div>
+    <div class="dlg-body">
+      <div class="toc"><a href="#h-data">Where the homes come from</a><a href="#h-match">How homes are matched</a><a href="#h-pay">Monthly cost</a><a href="#h-afford">Can we afford it?</a><a href="#h-value">Is it a good price?</a><a href="#h-tags">Tags</a><a href="#h-limits">What's estimated</a></div>
+
+      <h2 id="h-data">1. Where the homes come from</h2>
+      <ul>
+        <li>Listings come from <b>Realtor.com</b>, pulled by a free tool called HomeHarvest. Realtor.com and Zillow both get their listings from the same local MLS systems (the databases agents list homes in), so nearly every agent-listed home is on both. Zillow-only homes are mostly for-sale-by-owner, which is usually 0–2 homes at a time.</li>
+        <li>Zillow itself has no public API, so we can't pull from it directly. Each home has a "Find on Zillow" link.</li>
+        <li>${(CFG.boundary_labels || []).length ? `Homes are placed into neighborhoods using these boundaries: ${CFG.boundary_labels.map(esc).join('; ')}. That way a home labeled with a neighborhood is actually inside it, not just nearby.` : 'Homes are grouped by ZIP code.'}</li>
+        <li>Current data: <b>${nActive}</b> for-sale/pending homes under ${fmtK(SEARCH.price_max)} and <b>${nSold}</b> sold in the last ${SEARCH.sold_past_days ?? 180} days, as of ${DATA.updated ? new Date(DATA.updated).toLocaleString() : '—'}. Running <code>fetch.py</code> refreshes it.</li>
+      </ul>
+
+      <h2 id="h-match">2. How homes are matched</h2>
+      <p>A <b>match</b> passes everything we're looking for:</p>
+      <ul>
+        <li>Under ${fmtK(state.filters.priceMax)}, at least ${state.filters.bathsMin ?? 0} bathrooms (a half bath counts as 0.5).</li>
+        <li>At least ${state.filters.bedsMin ?? 0} bedrooms, <i>or</i> one fewer plus an office. "Office" means the listing description mentions an office, study, den, flex room or bonus room.</li>
+        <li>Single family or townhouse. Many townhouses are legally condos, so condo-typed listings are included too.</li>
+        <li><b>Garage or basement</b>: the listing reports garage spaces, or the description mentions a garage or basement.</li>
+        <li><b>Decent yard</b>: the lot is at least ${fmtN(state.filters.lotMin)} sq ft (about ${((state.filters.lotMin || 0) / 43560).toFixed(2)} acre), <i>or</i> the description mentions a fenced yard. Townhouse lots are often recorded as tiny even when they have a private yard, so the second rule catches those.</li>
+      </ul>
+      <p>A <b>near miss</b> passes everything except garage/basement or yard size. Near misses are shown faded after the matches, with a red ✗ saying what they lack.</p>
+
+      <h2 id="h-pay">3. Monthly cost — worked example</h2>
+      <p>Example: a <b>${fmt$(ex.price)}</b> single-family house in ${ex.tax_area}, no HOA.</p>
+      <table>
+        ${row(`Down payment (${pay.down}%)`, fmt$(p.down))}
+        ${row('Loan amount', fmt$(loan))}
+      </table>
+      <p><b>Principal &amp; interest.</b> The standard mortgage formula for a ${pay.term}-year fixed loan at <b>${pay.rate}%</b>. ${esc(PCFG.rate_note || '')} A real lender quote should replace it.</p>
+      <p><b>Property tax.</b> ${ASSESS === 1 ? "Tax is charged on the home's full value" : `Tax is charged on ${Math.round(ASSESS * 100)}% of the home's value (the "assessed value")`}. The tax rate is in "mills", meaning dollars per $1,000 of assessed value. The rate depends on which city and county the home is in:</p>
+      <table>
+        ${row(`${Math.round(ASSESS * 100)}% of ${fmt$(ex.price)} (assessed value)`, fmt$(assessed))}
+        ${row(`× ${mills} mills (${esc(ex.tax_area || 'default')}) ÷ 1,000`, fmt$(yrTax) + '/yr')}
+        ${pay.homestead ? row('− homestead exemption savings', '−' + fmt$(hsYr) + '/yr') : ''}
+        ${row('Property tax', fmt$(yrTax - hsYr) + '/yr = ' + fmt$(p.tax) + '/mo', 'sum')}
+      </table>
+      <p class="note">Tax rates used: ${Object.entries(pay.mills).map(([k, v]) => `${k} ${v}`).join(' · ')} mills.
+      The <b>homestead exemption</b> is a discount for living in the home you own. It takes a fixed dollar amount off the taxable value, so the savings are about the same at any price:
+      ${Object.entries(pay.hsSave).map(([k, v]) => `${k} ${fmt$(v)}/yr`).join(' · ')}. It usually starts the year after we move in, and we have to apply for it. Until then, taxes are higher. The detail view shows that "first year" figure.</p>
+      <p><b>Insurance.</b> ${pay.insPct}% of the price per year, a rough average; real quotes vary a lot. Condo-typed homes use half, because the HOA insures the building.</p>
+      <p><b>Maintenance.</b> ${pay.maintPct}% of the price per year is set aside for repairs: a roof every ~20 years, HVAC, water heater, and so on. It comes in lumps, but averaging it makes it comparable to rent. Condos use half.</p>
+      <p><b>Utilities+.</b> ${fmt$(pay.utilities)}/mo for costs an apartment usually doesn't have or that are bigger in a house: water/sewer, more heating and cooling, pest control and yard care.</p>
+      <table>
+        ${row('Principal &amp; interest', fmt$(p.pi))}
+        ${row('Property tax', fmt$(p.tax))}
+        ${row('Insurance', fmt$(p.ins))}
+        ${row('HOA (if any)', fmt$(p.hoa))}
+        ${row('<b>Mortgage payment</b> (what the lender bills, roughly)', fmt$(p.mortgage), 'sum')}
+        ${row('Maintenance', fmt$(p.maint))}
+        ${row('Utilities+', fmt$(p.util))}
+        ${row('<b>All-in monthly</b> (compare this to rent)', fmt$(p.allIn), 'sum')}
+      </table>
+      <p class="note">Not included: closing costs (about 2–4% of the price, paid once at purchase), moving and furniture. Part of each payment, about ${fmt$(loan * pay.rate / 1200 > 0 ? p.pi - loan * pay.rate / 1200 : 0)}/mo at the start, pays down the loan. That's savings, not cost, so the true cost is a little lower than shown.</p>
+
+      <h2 id="h-afford">4. Can we afford it?</h2>
+      <p>Lenders and financial planners use two rules of thumb, both based on <b>gross</b> (pre-tax) income. At ${fmt$(pay.income)}/yr, that's ${fmt$(inc)}/mo:</p>
+      <ul>
+        <li><b>28% rule:</b> the mortgage payment should be at most 28% of gross income. That's ${fmt$(inc * 0.28)}/mo for us.</li>
+        <li><b>36% rule:</b> the mortgage payment plus all other debt payments (${fmt$(pay.debts)}/mo car) should be at most 36%. That's ${fmt$(inc * 0.36)}/mo, leaving ${fmt$(inc * 0.36 - pay.debts)} for housing.</li>
+      </ul>
+      <p>For the example house: <b>${pct(p.front)}</b> and <b>${pct(p.back)}</b>. All-in housing is ${pct(p.allInPct)} of income. Each card shows these two percentages and turns orange if a home goes over either rule. Lenders will often approve up to 43–45%, but that's the most they'll lend, not a comfortable level.</p>
+
+      <h2 id="h-value">5. Is it a good price?</h2>
+      <ul>
+        <li>We compare each home's <b>price per square foot</b> to the median price per square foot of homes that <b>sold</b> in the same neighborhood recently (last ${SEARCH.sold_past_days ?? 180} days). "12% under area $/ft²" means it's asking less per square foot than recent sales.</li>
+        <li>This is a rough signal. Condition, lot size and location within the neighborhood matter a lot, and some listings have no square footage.</li>
+        <li>The detail view lists recent sales with the same number of bedrooms in the same neighborhood, with links.</li>
+        <li><b>Price drops</b> are tracked from one data refresh to the next, so they show up more the more often we refresh.</li>
+      </ul>
+
+      <h2 id="h-tags">6. Tags on the cards</h2>
+      <ul>
+        <li><b>New this week</b>: listed in the last 7 days. <b>Unseen</b>: we haven't opened its details yet.</li>
+        <li><b>Garage / Basement / Office/den / Fenced yard / Updated</b>: found in the listing data or description.</li>
+        <li><b>As-is / investor</b>: the description says as-is, investor, TLC, needs work or cash only.</li>
+        <li><b>↓ $10k</b>: price dropped by that much since we first saw it.</li>
+        <li>★ saves a favorite and ✕ hides a home. Notes typed in the detail view are saved too. All of these are stored in this browser only.</li>
+      </ul>
+
+      <h2 id="h-limits">7. What's estimated (and could be off)</h2>
+      <ul>
+        <li><b>Features from descriptions.</b> Garage, basement, office and fenced yard are detected by keywords. If a listing doesn't mention its basement, we miss it. If it says "no basement", we skip it. Check the highlighted words in the detail view.</li>
+        <li><b>Tax rates and homestead savings</b> come from config.yaml. ${esc(PCFG.tax_note || '')} Actual bills can differ by a few hundred dollars a year.</li>
+        <li><b>Insurance</b> varies a lot by house age, roof and claims history. Get quotes for serious contenders.</li>
+        <li><b>Interest rate</b> is an estimate. A pre-approval will give the real one. Each 0.25% changes the payment on a $360k loan by about $60/mo.</li>
+      </ul>
+      <p class="note">Every assumption can be changed in the sidebar under "Monthly payment". "Reset payment assumptions" restores the defaults.</p>
+    </div>`;
+  dlg.querySelector('[data-act=close]').onclick = () => dlg.close();
+  dlg.onclick = e => {
+    if (e.target === dlg) dlg.close();
+    const a = e.target.closest('.toc a');
+    if (a) { e.preventDefault(); dlg.querySelector(a.getAttribute('href')).scrollIntoView({ behavior: 'smooth' }); }
+  };
+  dlg.showModal();
+  dlg.scrollTop = 0;
+}
+$('#help-btn').onclick = openHelp;
+
+// ---------- fullscreen photo viewer ----------
+const lb = { el: $('#lb'), photos: [], i: 0 };
+// Realtor.com serves up to 1024px if you ask for a bigger size than the 480px thumbnail.
+const bigPhoto = u => u.replace(/-w\d+_h\d+(_x2)?\./, '-w1024_h768_x2.');
+function lbShow(i) {
+  const n = lb.photos.length;
+  lb.i = (i + n) % n;
+  $('#lb-img').src = bigPhoto(lb.photos[lb.i]);
+  $('#lb-count').textContent = `${lb.i + 1} / ${n}`;
+  $('#lb-strip').querySelectorAll('img').forEach((t, k) => t.classList.toggle('on', k === lb.i));
+  $('#lb-strip').children[lb.i]?.scrollIntoView({ inline: 'center', block: 'nearest' });
+  for (const d of [1, -1]) new Image().src = bigPhoto(lb.photos[(lb.i + d + n) % n]);
+}
+function openLightbox(photos, i) {
+  lb.photos = photos;
+  $('#lb-strip').innerHTML = photos.map((p, k) => `<img src="${esc(p)}" data-k="${k}" loading="lazy" alt="">`).join('');
+  lb.el.showModal();
+  lbShow(i);
+}
+lb.el.addEventListener('click', e => {
+  const b = e.target.closest('[data-lb]'), t = e.target.closest('#lb-strip img');
+  if (b) b.dataset.lb === 'close' ? lb.el.close() : lbShow(lb.i + Number(b.dataset.lb));
+  else if (t) lbShow(Number(t.dataset.k));
+  else if (e.target === lb.el) lb.el.close();
+});
+lb.el.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') { lbShow(lb.i + 1); e.preventDefault(); }
+  if (e.key === 'ArrowLeft') { lbShow(lb.i - 1); e.preventDefault(); }
+});
+let touchX = null;
+lb.el.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, { passive: true });
+lb.el.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - touchX;
+  if (Math.abs(dx) > 40) lbShow(lb.i + (dx < 0 ? 1 : -1));
+});
+
+$('#updated').textContent = CFG.sample ? 'SAMPLE DATA (made up) — run fetch.py for real listings'
+  : DATA.updated ? `Data from Realtor.com · updated ${new Date(DATA.updated).toLocaleString()}` : 'No data yet — run fetch.py';
+if (CFG.title) { $('#title').textContent = 'House Hunter · ' + CFG.title; document.title = 'House Hunter — ' + CFG.title; }
+$('#sold-days').textContent = SEARCH.sold_past_days ?? 180;
+$('#tax-hint').textContent = `Taxed on ${Math.round(ASSESS * 100)}% of value × mills ÷ 1,000. Other areas use ${DEFAULT_MILLS} mills.`;
+if (!window.HOUSE_CONFIG) $('#grid').insertAdjacentHTML('beforebegin', '<div class="empty">No data/config.js yet. Run <code>python fetch.py</code> (or <code>--sample</code>).</div>');
+syncInputs();
+render();
+</script>
+</body>
+</html>

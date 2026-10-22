@@ -1,0 +1,103 @@
+# House Hunter configuration.
+# Copy this file to config.yaml and edit it. config.yaml is git-ignored, so your
+# income and criteria stay on your machine. This example covers a few intown
+# Atlanta neighborhoods and shows each kind of boundary source.
+
+title: Intown Atlanta
+
+area:
+  # ZIP codes to search. Make sure they cover every boundary below; results are
+  # then clipped to the boundaries, so it's fine to over-cover.
+  zips: ["30306", "30307", "30312", "30315", "30316", "30317", "30030", "30032",
+         "30033", "30002", "30322", "30324", "30329", "30319", "30345"]
+
+  # Boundaries that define "neighborhoods". A listing gets the name of the first
+  # boundary that contains it, so list the most specific ones first.
+  # Leave this empty ([]) to keep every listing in the ZIPs, labeled by ZIP.
+  #
+  # Each boundary source also says which tax area its homes fall in (see
+  # payment.tax_areas): either `tax_area: <name>` or `tax_area_by_county`.
+  boundaries:
+    # Any ArcGIS FeatureServer/MapServer layer (most city GIS portals have one).
+    - type: arcgis
+      label: City of Atlanta neighborhoods
+      url: https://gis.atlantaga.gov/dpcd/rest/services/AdministrativeArea/GeopoliticalArea/FeatureServer/1
+      name_field: NAME
+      names: [Kirkwood, East Atlanta, Grant Park, Ormewood Park, Inman Park,
+              Virginia Highland, Candler Park, Druid Hills]
+      tax_area_by_county: {DeKalb: Atlanta (DeKalb), default: Atlanta (Fulton)}
+
+    # US Census places (cities and unincorporated "CDPs"), anywhere in the US.
+    # state_fips: https://www.census.gov/library/reference/code-lists/ansi.html
+    - type: census_place
+      label: City of Decatur (US Census)
+      state_fips: "13"
+      names: [Decatur]
+      tax_area: Decatur
+    - type: census_place
+      label: Druid Hills and North Druid Hills (US Census)
+      state_fips: "13"
+      names: [Druid Hills, North Druid Hills]
+      tax_area: Unincorporated DeKalb
+
+    # Your own polygons, e.g. drawn at geojson.io and saved next to this file.
+    # - type: geojson
+    #   label: My custom areas
+    #   path: my_areas.geojson
+    #   name_field: name
+    #   tax_area: Somewhere
+
+# Map tiles. The default (Esri World Street Map) is free for personal,
+# non-commercial use. Any XYZ tile URL works here.
+# map:
+#   tile_url: https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}
+#   attribution: Tiles &copy; Esri
+
+# What fetch.py downloads. Keep these looser than your criteria below so the
+# page can show near misses and you can loosen filters without re-fetching.
+search:
+  price_max: 500000
+  sold_price_max: 550000   # sold comps can go a bit higher
+  sold_past_days: 180
+  property_types: [single_family, townhomes, condos]  # many townhouses are typed as condos
+  beds_min: 2
+  baths_min: 1.5
+
+# Starting filters on the page ("Reset to my criteria" returns to these).
+criteria:
+  price_max: 500000
+  beds_min: 3
+  baths_min: 2
+  office_counts_as_bedroom: true   # allow one fewer bedroom if there's an office/den
+  need_garage_or_basement: true
+  lot_min_sqft: 5000
+  fenced_yard_counts_as_yard: true # small lot is OK if a fenced yard is mentioned
+  show_near_misses: true           # show homes failing only garage/basement or yard
+
+# Monthly cost assumptions. All can be changed on the page too.
+payment:
+  rate: 7.1                 # 30-year fixed, %
+  rate_note: Freddie Mac's 30-year average was 7.32% on Oct 22, 2026; excellent credit (760+) usually gets about 0.2% less.
+  down_pct: 20
+  term_years: 30
+  insurance_pct: 0.55       # of price per year; condo-typed homes use half
+  maintenance_pct: 1.25     # of price per year; condo-typed homes use half
+  utilities_monthly: 300    # costs an apartment usually doesn't have
+  income: 150000            # gross household income per year
+  other_debts: 0            # monthly car/student/other loan payments
+
+  # Property tax = price × assessment_ratio × mills / 1000 − homestead savings.
+  # Georgia assesses at 40%. For a state that taxes full value, set 1.0 and use
+  # mills = effective rate × 10 (1.2% → 12).
+  assessment_ratio: 0.4
+  default_mills: 43         # for homes whose tax area isn't listed below
+  tax_areas:
+    Atlanta (Fulton):      {mills: 40.9, homestead_savings: 1220}
+    Atlanta (DeKalb):      {mills: 44.1, homestead_savings: 1150}
+    Decatur:               {mills: 44.9, homestead_savings: 640}
+    Unincorporated DeKalb: {mills: 43.6, homestead_savings: 480}
+  tax_note: >-
+    Tax rates are 2025 figures. Homestead savings are basic exemptions for owners
+    under 65 (fixed dollar amounts off assessed value × the levies they apply to).
+    DeKalb's EHOST credit and any City Schools of Decatur exemption aren't counted,
+    so DeKalb and Decatur estimates run slightly high.
